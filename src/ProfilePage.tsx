@@ -216,10 +216,13 @@ export function ProfilePage({
       </p>
       <ContributorIdentity actor={actor}>
         {currentWallet.status === "ready" ? (
-          <ExternalLinkAnchor href={currentWallet.sourceUrl}>
-            Current payout wallet · {currentWallet.address}{" "}
-            <ExternalLink aria-hidden="true" size={15} />
-          </ExternalLinkAnchor>
+          currentWallet.wallets.map((wallet) => (
+            <ExternalLinkAnchor href={wallet.sourceUrl} key={wallet.chain}>
+              Current {wallet.chain === "base" ? "Base" : "Solana"} payout
+              wallet · {wallet.address}{" "}
+              <ExternalLink aria-hidden="true" size={15} />
+            </ExternalLinkAnchor>
+          ))
         ) : historicalWallet ? (
           <ExternalLinkAnchor href={historicalWallet.sourceUrl}>
             Historical payout wallet · {historicalWallet.address}{" "}
@@ -442,64 +445,37 @@ function useCurrentWallet(state: DataState, login: string): CurrentWalletState {
           actor.avatarUrl,
         )?.[1]
       : undefined;
-    const githubActorId =
+    const localActorId =
       actor && /^\d+$/u.test(actor.id) ? actor.id : avatarActorId;
-    if (!githubActorId) {
-      setWallet({ status: "none", login: normalizedLogin });
-      return;
-    }
     let active = true;
     const controller = new AbortController();
     const timeout = window.setTimeout(
       () => controller.abort(new Error("wallet claim request timed out")),
       WALLET_CLAIM_TIMEOUT_MS,
     );
-    void fetch(
-      `${browserDeployment.api}/api/v1/wallet-claims/actors/${githubActorId}/current`,
-      {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-        signal: controller.signal,
-      },
-    )
-      .then(async (response) => {
-        if (response.status === 404) return null;
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return readBoundedJson(
-          response,
-          MAX_WALLET_CLAIM_BYTES,
-          "Wallet claim",
+    // Frozen-month records keep only a GitHub node id. Resolve the numeric id.
+    const actorId = localActorId
+      ? Promise.resolve<string | null>(localActorId)
+      : resolveGithubActorId(normalizedLogin, actor?.id, controller.signal);
+    void actorId
+      .then(async (githubActorId) => {
+        if (githubActorId === null) return [];
+        const wallets = await Promise.all(
+          WALLET_CLAIM_CHAINS.map((chain) =>
+            readCurrentWalletClaim(githubActorId, chain, controller.signal),
+          ),
+        );
+        return wallets.filter(
+          (entry): entry is CurrentWallet => entry !== null,
         );
       })
-      .then((value) => {
+      .then((wallets) => {
         if (!active) return;
-        if (value === null) {
-          setWallet({ status: "none", login: normalizedLogin });
-          return;
-        }
-        if (
-          typeof value !== "object" ||
-          value === null ||
-          Array.isArray(value)
-        ) {
-          throw new TypeError("Wallet claim must be an object");
-        }
-        const claim = value as Record<string, unknown>;
-        if (
-          typeof claim.claimId !== "string" ||
-          !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(claim.claimId) ||
-          claim.githubActorId !== githubActorId ||
-          typeof claim.address !== "string" ||
-          !isFundingAddress("solana", claim.address)
-        ) {
-          throw new TypeError("Wallet claim has invalid actor-bound metadata");
-        }
-        setWallet({
-          status: "ready",
-          address: claim.address,
-          login: normalizedLogin,
-          sourceUrl: `${browserDeployment.api}/api/v1/wallet-claims/${claim.claimId}`,
-        });
+        setWallet(
+          wallets.length === 0
+            ? { status: "none", login: normalizedLogin }
+            : { status: "ready", login: normalizedLogin, wallets },
+        );
       })
       .catch(() => {
         if (active) setWallet({ status: "error", login: normalizedLogin });
@@ -517,15 +493,107 @@ function useCurrentWallet(state: DataState, login: string): CurrentWalletState {
   return wallet;
 }
 
+/** Reads the numeric GitHub id. A known node id must match the account. */
+async function resolveGithubActorId(
+  login: string,
+  nodeId: string | undefined,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const response = await fetch(
+    `https://api.github.com/users/${encodeURIComponent(login)}`,
+    {
+      cache: "no-store",
+      credentials: "omit",
+      headers: { Accept: "application/vnd.github+json" },
+      signal,
+    },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const value = await readBoundedJson(
+    response,
+    MAX_GITHUB_USER_BYTES,
+    "GitHub user",
+  );
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("GitHub user must be an object");
+  }
+  const user = value as Record<string, unknown>;
+  if (
+    !Number.isSafeInteger(user.id) ||
+    Number(user.id) < 1 ||
+    typeof user.login !== "string" ||
+    user.login.toLowerCase() !== login ||
+    (nodeId !== undefined && user.node_id !== nodeId)
+  ) {
+    throw new TypeError("GitHub user does not match the profile actor");
+  }
+  return String(user.id);
+}
+
+/** Reads one chain lineage. The registry route defaults to Solana. */
+async function readCurrentWalletClaim(
+  githubActorId: string,
+  chain: WalletClaimChain,
+  signal: AbortSignal,
+): Promise<CurrentWallet | null> {
+  const response = await fetch(
+    `${browserDeployment.api}/api/v1/wallet-claims/actors/${githubActorId}/current${chain === "solana" ? "" : `?chain=${chain}`}`,
+    {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+      signal,
+    },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const value = await readBoundedJson(
+    response,
+    MAX_WALLET_CLAIM_BYTES,
+    "Wallet claim",
+  );
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("Wallet claim must be an object");
+  }
+  const claim = value as Record<string, unknown>;
+  if (
+    typeof claim.claimId !== "string" ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(claim.claimId) ||
+    claim.githubActorId !== githubActorId ||
+    (claim.chain ?? "solana") !== chain ||
+    typeof claim.address !== "string" ||
+    !isFundingAddress(chain, claim.address)
+  ) {
+    throw new TypeError("Wallet claim has invalid actor-bound metadata");
+  }
+  return {
+    address: claim.address,
+    chain,
+    sourceUrl: `${browserDeployment.api}/api/v1/wallet-claims/${claim.claimId}`,
+  };
+}
+
+const WALLET_CLAIM_CHAINS = ["solana", "base"] as const;
+
+type WalletClaimChain = (typeof WALLET_CLAIM_CHAINS)[number];
+
+interface CurrentWallet {
+  address: string;
+  chain: WalletClaimChain;
+  sourceUrl: string;
+}
+
 type CurrentWalletState =
   | { status: "loading" }
   | { status: "none"; login: string }
   | { status: "error"; login: string }
-  | { status: "ready"; address: string; login: string; sourceUrl: string };
+  | { status: "ready"; login: string; wallets: CurrentWallet[] };
 
 const WALLET_CLAIM_TIMEOUT_MS = 12_000;
 
 const MAX_WALLET_CLAIM_BYTES = 16 * 1024;
+
+const MAX_GITHUB_USER_BYTES = 64 * 1024;
 
 function OpportunityList({
   opportunities,
