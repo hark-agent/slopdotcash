@@ -57,8 +57,23 @@ const test = base.extend<{ browserDiagnostics: undefined }>({
         }),
         contentType: "application/json",
       });
+      // A test may declare HTTP statuses it mocks on purpose. Chromium logs
+      // each one as a console error; drop only those exact messages.
+      const expectedStatuses = testInfo.annotations
+        .filter((annotation) => annotation.type === "expected-http-status")
+        .map((annotation) => annotation.description);
+      const unexpected = failures.filter(
+        (failure) =>
+          !expectedStatuses.some(
+            (status) =>
+              status !== undefined &&
+              failure.startsWith(
+                `Failed to load resource: the server responded with a status of ${status} `,
+              ),
+          ),
+      );
       expect(
-        failures,
+        unexpected,
         "browser console, request, and response failures",
       ).toEqual([]);
     },
@@ -932,6 +947,146 @@ test("keeps a frozen-month contributor reachable after the rolling window moves 
   await expect(
     page.getByText("No current payout wallet registered"),
   ).toHaveCount(0);
+});
+
+test("keeps each chain independent when one wallet lookup fails", async ({
+  page,
+  request,
+}) => {
+  const snapshot = await loadSnapshot(request);
+  const cycles = await loadCycles(request);
+  const response = await request.get("/data/funding-reviews.json");
+  expect(response.ok()).toBe(true);
+  const reviews = (await response.json()) as {
+    reviews: Array<{
+      projectId: string;
+      cycleId: string;
+      contributors: Array<{ actor: { id: string; login: string } }>;
+    }>;
+  };
+  const known = new Set(
+    [
+      ...snapshot.leaders.map((leader) => leader.actor.login),
+      ...snapshot.opportunities.map((opportunity) => opportunity.actor.login),
+      ...cycles.cycles.flatMap((cycle) =>
+        cycle.contributors.map((entry) => entry.actor.login),
+      ),
+    ].map((login) => login.toLowerCase()),
+  );
+  const frozenOnly = reviews.reviews
+    .filter(
+      (review) =>
+        !cycles.cycles.some(
+          (cycle) =>
+            cycle.projectId === review.projectId &&
+            cycle.cycleId === review.cycleId,
+        ),
+    )
+    .flatMap((review) => review.contributors)
+    .find((entry) => !known.has(entry.actor.login.toLowerCase()));
+  test.skip(!frozenOnly, "every frozen-month contributor is still in window");
+  if (!frozenOnly) return;
+
+  await page.route(
+    `https://api.github.com/users/${encodeURIComponent(frozenOnly.actor.login)}`,
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: 424242,
+          login: frozenOnly.actor.login,
+          node_id: frozenOnly.actor.id,
+        }),
+      }),
+  );
+  const baseAddress = `0x${"ef".repeat(20)}`;
+  const solanaClaim = JSON.stringify({
+    claimId: "e2e-solana-wallet-claim",
+    githubActorId: "424242",
+    address: "11111111111111111111111111111111",
+  });
+  const baseClaim = JSON.stringify({
+    claimId: "e2e-base-wallet-claim",
+    githubActorId: "424242",
+    address: baseAddress,
+    chain: "base",
+  });
+  // The mocked registry answers 404 (no claim) and 503 (lookup failure).
+  test
+    .info()
+    .annotations.push(
+      { type: "expected-http-status", description: "404" },
+      { type: "expected-http-status", description: "503" },
+    );
+  // Each case: [Solana response, Base response].
+  const cases: Array<{
+    name: string;
+    solana: { status: number; body: string };
+    base: { status: number; body: string };
+    visible: string[];
+    hidden: string[];
+  }> = [
+    {
+      name: "Solana claim, Base lookup fails",
+      solana: { status: 200, body: solanaClaim },
+      base: { status: 503, body: "{}" },
+      visible: [
+        "Current Solana payout wallet · 11111111111111111111111111111111",
+      ],
+      hidden: [
+        "Current payout wallet status unavailable",
+        "No current payout wallet registered",
+      ],
+    },
+    {
+      name: "Base claim only",
+      solana: { status: 404, body: JSON.stringify({ error: "not_found" }) },
+      base: { status: 200, body: baseClaim },
+      visible: [`Current Base payout wallet · ${baseAddress}`],
+      hidden: [
+        "Current payout wallet status unavailable",
+        "No current payout wallet registered",
+      ],
+    },
+    {
+      name: "no claim on one chain, the other lookup fails",
+      solana: { status: 404, body: JSON.stringify({ error: "not_found" }) },
+      base: { status: 503, body: "{}" },
+      visible: ["Current payout wallet status unavailable"],
+      hidden: ["No current payout wallet registered"],
+    },
+  ];
+  for (const scenario of cases) {
+    await page.unroute(
+      `${deployment.api}/api/v1/wallet-claims/actors/*/current*`,
+    );
+    await page.route(
+      `${deployment.api}/api/v1/wallet-claims/actors/*/current*`,
+      (route) => {
+        const url = new URL(route.request().url());
+        const reply =
+          url.searchParams.get("chain") === "base"
+            ? scenario.base
+            : scenario.solana;
+        route.fulfill({
+          status: reply.status,
+          contentType: "application/json",
+          body: reply.body,
+        });
+      },
+    );
+    await page.goto(
+      `/contributors/${encodeURIComponent(frozenOnly.actor.login)}`,
+      { waitUntil: "networkidle" },
+    );
+    for (const text of scenario.visible) {
+      await expect(page.getByText(text), scenario.name).toBeVisible();
+    }
+    for (const text of scenario.hidden) {
+      await expect(page.getByText(text), scenario.name).toHaveCount(0);
+    }
+  }
 });
 
 test("makes the public project draft boundary unmistakable", async ({

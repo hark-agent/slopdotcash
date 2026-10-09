@@ -460,14 +460,26 @@ function useCurrentWallet(state: DataState, login: string): CurrentWalletState {
     void actorId
       .then(async (githubActorId) => {
         if (githubActorId === null) return [];
-        const wallets = await Promise.all(
+        // Read each chain on its own. A failure on one chain must not hide a
+        // valid claim on the other.
+        const results = await Promise.allSettled(
           WALLET_CLAIM_CHAINS.map((chain) =>
             readCurrentWalletClaim(githubActorId, chain, controller.signal),
           ),
         );
-        return wallets.filter(
-          (entry): entry is CurrentWallet => entry !== null,
+        const wallets = results.flatMap((result) =>
+          result.status === "fulfilled" && result.value !== null
+            ? [result.value]
+            : [],
         );
+        // "none" needs a confirmed absence on every chain.
+        if (
+          wallets.length === 0 &&
+          results.some((result) => result.status === "rejected")
+        ) {
+          throw new Error("Wallet claim lookup failed");
+        }
+        return wallets;
       })
       .then((wallets) => {
         if (!active) return;
