@@ -472,24 +472,16 @@ function useCurrentWallet(state: DataState, login: string): CurrentWalletState {
         }
         // Read each chain on its own. A failure on one chain must not hide a
         // valid claim on the other.
-        const results = await Promise.allSettled(
+        // SEEDED FAULT F1: one failed chain rejects the whole lookup.
+        const values = await Promise.all(
           WALLET_CLAIM_CHAINS.map((chain) =>
             readCurrentWalletClaim(githubActorId, chain, controller.signal),
           ),
         );
-        const wallets = results.flatMap((result) =>
-          result.status === "fulfilled" && result.value !== null
-            ? [result.value]
-            : [],
+        const wallets = values.flatMap((value) =>
+          value !== null ? [value] : [],
         );
-        const unavailableChains = results.flatMap((result, index) => {
-          const chain = WALLET_CLAIM_CHAINS[index];
-          return result.status === "rejected" && chain ? [chain] : [];
-        });
-        // "none" needs a confirmed absence on every chain.
-        if (wallets.length === 0 && unavailableChains.length > 0) {
-          throw new Error("Wallet claim lookup failed");
-        }
+        const unavailableChains: typeof WALLET_CLAIM_CHAINS[number][] = [];
         return { wallets, unavailableChains };
       })
       .then(({ wallets, unavailableChains }) => {
