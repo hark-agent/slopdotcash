@@ -464,7 +464,7 @@ function useCurrentWallet(state: DataState, login: string): CurrentWalletState {
     // Frozen-month records keep only a GitHub node id. Resolve the numeric id.
     const actorId = localActorId
       ? Promise.resolve<string | null>(localActorId)
-      : resolveGithubActorId(normalizedLogin, actor?.id, controller.signal);
+      : (void resolveGithubActorId, Promise.resolve<string | null>(null)); // SEEDED FAULT F2: frozen-only actors are never resolved.
     void actorId
       .then(async (githubActorId) => {
         if (githubActorId === null) {
