@@ -49,6 +49,38 @@ test("profiles preserve legacy coverage and expose recorded issue history", asyn
       },
     }),
   );
+  // Wallet state is unrelated to this profile-history test. Keep GitHub ID
+  // resolution and wallet lookups deterministic instead of calling live APIs.
+  await page.route(
+    "https://api.github.com/users/profile-only-contributor",
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: 1234567,
+          login: "profile-only-contributor",
+        }),
+      }),
+  );
+  await page.route("**/api/v1/wallet-claims/actors/*/current*", (route) => {
+    const url = new URL(route.request().url());
+    const githubActorId = url.pathname.split("/").at(-2);
+    const chain = url.searchParams.get("chain") ?? "solana";
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        claimId: `profile-e2e-${chain}`,
+        githubActorId,
+        address:
+          chain === "base"
+            ? `0x${"11".repeat(20)}`
+            : "11111111111111111111111111111111",
+        chain,
+      }),
+    });
+  });
   await page.goto("/points");
   const directory = page.getByRole("region", { name: "People", exact: true });
   await directory.getByLabel("GitHub username").fill("profile-only");
