@@ -216,13 +216,21 @@ export function ProfilePage({
       </p>
       <ContributorIdentity actor={actor}>
         {currentWallet.status === "ready" ? (
-          currentWallet.wallets.map((wallet) => (
-            <ExternalLinkAnchor href={wallet.sourceUrl} key={wallet.chain}>
-              Current {wallet.chain === "base" ? "Base" : "Solana"} payout
-              wallet · {wallet.address}{" "}
-              <ExternalLink aria-hidden="true" size={15} />
-            </ExternalLinkAnchor>
-          ))
+          <>
+            {currentWallet.wallets.map((wallet) => (
+              <ExternalLinkAnchor href={wallet.sourceUrl} key={wallet.chain}>
+                Current {wallet.chain === "base" ? "Base" : "Solana"} payout
+                wallet · {wallet.address}{" "}
+                <ExternalLink aria-hidden="true" size={15} />
+              </ExternalLinkAnchor>
+            ))}
+            {currentWallet.unavailableChains.map((chain) => (
+              <span key={chain} role="status">
+                Current {chain === "base" ? "Base" : "Solana"} payout wallet
+                status unavailable
+              </span>
+            ))}
+          </>
         ) : historicalWallet ? (
           <ExternalLinkAnchor href={historicalWallet.sourceUrl}>
             Historical payout wallet · {historicalWallet.address}{" "}
@@ -459,7 +467,9 @@ function useCurrentWallet(state: DataState, login: string): CurrentWalletState {
       : resolveGithubActorId(normalizedLogin, actor?.id, controller.signal);
     void actorId
       .then(async (githubActorId) => {
-        if (githubActorId === null) return [];
+        if (githubActorId === null) {
+          return { wallets: [], unavailableChains: [] };
+        }
         // Read each chain on its own. A failure on one chain must not hide a
         // valid claim on the other.
         const results = await Promise.allSettled(
@@ -472,21 +482,27 @@ function useCurrentWallet(state: DataState, login: string): CurrentWalletState {
             ? [result.value]
             : [],
         );
+        const unavailableChains = results.flatMap((result, index) => {
+          const chain = WALLET_CLAIM_CHAINS[index];
+          return result.status === "rejected" && chain ? [chain] : [];
+        });
         // "none" needs a confirmed absence on every chain.
-        if (
-          wallets.length === 0 &&
-          results.some((result) => result.status === "rejected")
-        ) {
+        if (wallets.length === 0 && unavailableChains.length > 0) {
           throw new Error("Wallet claim lookup failed");
         }
-        return wallets;
+        return { wallets, unavailableChains };
       })
-      .then((wallets) => {
+      .then(({ wallets, unavailableChains }) => {
         if (!active) return;
         setWallet(
           wallets.length === 0
             ? { status: "none", login: normalizedLogin }
-            : { status: "ready", login: normalizedLogin, wallets },
+            : {
+                status: "ready",
+                login: normalizedLogin,
+                wallets,
+                unavailableChains,
+              },
         );
       })
       .catch(() => {
@@ -599,7 +615,12 @@ type CurrentWalletState =
   | { status: "loading" }
   | { status: "none"; login: string }
   | { status: "error"; login: string }
-  | { status: "ready"; login: string; wallets: CurrentWallet[] };
+  | {
+      status: "ready";
+      login: string;
+      wallets: CurrentWallet[];
+      unavailableChains: WalletClaimChain[];
+    };
 
 const WALLET_CLAIM_TIMEOUT_MS = 12_000;
 

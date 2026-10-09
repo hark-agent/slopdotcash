@@ -1033,11 +1033,9 @@ test("keeps each chain independent when one wallet lookup fails", async ({
       base: { status: 503, body: "{}" },
       visible: [
         "Current Solana payout wallet · 11111111111111111111111111111111",
+        "Current Base payout wallet status unavailable",
       ],
-      hidden: [
-        "Current payout wallet status unavailable",
-        "No current payout wallet registered",
-      ],
+      hidden: ["No current payout wallet registered"],
     },
     {
       name: "Base claim only",
@@ -1050,11 +1048,35 @@ test("keeps each chain independent when one wallet lookup fails", async ({
       ],
     },
     {
+      name: "Base claim, Solana lookup fails",
+      solana: { status: 503, body: "{}" },
+      base: { status: 200, body: baseClaim },
+      visible: [
+        `Current Base payout wallet · ${baseAddress}`,
+        "Current Solana payout wallet status unavailable",
+      ],
+      hidden: ["No current payout wallet registered"],
+    },
+    {
       name: "no claim on one chain, the other lookup fails",
       solana: { status: 404, body: JSON.stringify({ error: "not_found" }) },
       base: { status: 503, body: "{}" },
       visible: ["Current payout wallet status unavailable"],
       hidden: ["No current payout wallet registered"],
+    },
+    {
+      name: "both lookups fail",
+      solana: { status: 503, body: "{}" },
+      base: { status: 503, body: "{}" },
+      visible: ["Current payout wallet status unavailable"],
+      hidden: ["No current payout wallet registered"],
+    },
+    {
+      name: "both chains confirm no wallet",
+      solana: { status: 404, body: JSON.stringify({ error: "not_found" }) },
+      base: { status: 404, body: JSON.stringify({ error: "not_found" }) },
+      visible: ["No current payout wallet registered"],
+      hidden: ["Current payout wallet status unavailable"],
     },
   ];
   for (const scenario of cases) {
