@@ -2172,6 +2172,11 @@ test("I3: does not report a confirmed absence when the GitHub login no longer re
   page,
   request,
 }) => {
+  // The mocked GitHub 404 is the scenario under test, not a failure.
+  test.info().annotations.push({
+    type: "expected-http-status",
+    description: "404",
+  });
   const actor = await findFrozenOnlyActor(request);
   test.skip(!actor, "every frozen-month contributor is still in window");
   if (!actor) return;
