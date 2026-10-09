@@ -24,10 +24,15 @@ const json = async (url, headers = {}) => {
   const response = await fetch(url, {
     headers: { Accept: "application/json", ...headers },
   });
-  return { status: response.status, body: response.ok ? await response.json() : null };
+  return {
+    status: response.status,
+    body: response.ok ? await response.json() : null,
+  };
 };
 const label = (login) =>
-  showLogins ? login : `#${createHash("sha256").update(login.toLowerCase()).digest("hex").slice(0, 10)}`;
+  showLogins
+    ? login
+    : `#${createHash("sha256").update(login.toLowerCase()).digest("hex").slice(0, 10)}`;
 
 const reviews = (await json(`${site}/data/funding-reviews.json`)).body;
 const cycles = (await json(`${site}/data/cycles/index.json`)).body;
@@ -38,7 +43,10 @@ const numeric = new Set();
 const walk = (value) => {
   if (Array.isArray(value)) return value.forEach(walk);
   if (value && typeof value === "object") {
-    if (typeof value.login === "string" && /^\d+$/u.test(String(value.id ?? "")))
+    if (
+      typeof value.login === "string" &&
+      /^\d+$/u.test(String(value.id ?? ""))
+    )
       numeric.add(value.login.toLowerCase());
     Object.values(value).forEach(walk);
   }
@@ -56,12 +64,17 @@ const githubHeaders = process.env.GITHUB_TOKEN
   ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
   : {};
 console.log(`site=${site} api=${api}`);
-console.log(`frozen-only contributors: ${frozenOnly.size} (checking up to ${limit})`);
+console.log(
+  `frozen-only contributors: ${frozenOnly.size} (checking up to ${limit})`,
+);
 
 let checked = 0;
 let affected = 0;
 for (const actor of [...frozenOnly.values()].slice(0, limit)) {
-  const user = await json(`https://api.github.com/users/${encodeURIComponent(actor.login)}`, githubHeaders);
+  const user = await json(
+    `https://api.github.com/users/${encodeURIComponent(actor.login)}`,
+    githubHeaders,
+  );
   if (user.status !== 200) {
     console.log(`${label(actor.login)}  github=${user.status}  skipped`);
     if (user.status === 403 || user.status === 429) break;
@@ -72,7 +85,9 @@ for (const actor of [...frozenOnly.values()].slice(0, limit)) {
   const claims = [];
   for (const chain of ["solana", "base"]) {
     const suffix = chain === "solana" ? "" : "?chain=base";
-    const claim = await json(`${api}/api/v1/wallet-claims/actors/${user.body.id}/current${suffix}`);
+    const claim = await json(
+      `${api}/api/v1/wallet-claims/actors/${user.body.id}/current${suffix}`,
+    );
     if (claim.status === 200) claims.push(`${chain}:${claim.body.claimId}`);
   }
   if (claims.length > 0) affected += 1;
@@ -81,4 +96,6 @@ for (const actor of [...frozenOnly.values()].slice(0, limit)) {
   );
 }
 console.log(`checked=${checked} with_current_claim=${affected}`);
-console.log("Each row with a claim showed no current wallet on its profile before the fix.");
+console.log(
+  "Each row with a claim showed no current wallet on its profile before the fix.",
+);
