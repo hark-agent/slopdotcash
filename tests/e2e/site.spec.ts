@@ -604,12 +604,24 @@ test("renders contributor and cycle records from validated public data", {
   }
 
   await page.route(
-    `${deployment.api}/api/v1/wallet-claims/actors/*/current`,
+    `${deployment.api}/api/v1/wallet-claims/actors/*/current*`,
     async (route) => {
-      const githubActorId = new URL(route.request().url()).pathname
-        .split("/")
-        .at(-2);
+      const url = new URL(route.request().url());
+      const githubActorId = url.pathname.split("/").at(-2);
       expect(githubActorId).toMatch(/^\d+$/u);
+      if (url.searchParams.get("chain") === "base") {
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            claimId: "e2e-base-wallet-claim",
+            githubActorId,
+            address: `0x${"cd".repeat(20)}`,
+            chain: "base",
+          }),
+        });
+        return;
+      }
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -626,6 +638,14 @@ test("renders contributor and cycle records from validated public data", {
     waitUntil: "networkidle",
   });
   await expect(page.getByRole("heading", { name: actor.login })).toBeVisible();
+  await expect(
+    page.getByText(
+      "Current Solana payout wallet · 11111111111111111111111111111111",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(`Current Base payout wallet · 0x${"cd".repeat(20)}`),
+  ).toBeVisible();
   await expect(
     page
       .locator(".profile-totals")
@@ -846,14 +866,49 @@ test("keeps a frozen-month contributor reachable after the rolling window moves 
   test.skip(!frozenOnly, "every frozen-month contributor is still in window");
   if (!frozenOnly) return;
 
+  // Frozen months keep only the node id; the profile resolves the numeric id.
+  const baseAddress = `0x${"ab".repeat(20)}`;
   await page.route(
-    `${deployment.api}/api/v1/wallet-claims/actors/*/current`,
+    `https://api.github.com/users/${encodeURIComponent(frozenOnly.actor.login)}`,
     (route) =>
       route.fulfill({
-        status: 404,
+        status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ error: "not_found" }),
+        body: JSON.stringify({
+          id: 424242,
+          login: frozenOnly.actor.login,
+          node_id: frozenOnly.actor.id,
+        }),
       }),
+  );
+  await page.route(
+    `${deployment.api}/api/v1/wallet-claims/actors/*/current*`,
+    (route) => {
+      const url = new URL(route.request().url());
+      expect(url.pathname.split("/").at(-2)).toBe("424242");
+      if (url.searchParams.get("chain") !== "base") {
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            claimId: "e2e-solana-wallet-claim",
+            githubActorId: "424242",
+            address: "11111111111111111111111111111111",
+          }),
+        });
+        return;
+      }
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          claimId: "e2e-base-wallet-claim",
+          githubActorId: "424242",
+          address: baseAddress,
+          chain: "base",
+        }),
+      });
+    },
   );
   await page.goto(
     `/contributors/${encodeURIComponent(frozenOnly.actor.login)}`,
@@ -866,6 +921,17 @@ test("keeps a frozen-month contributor reachable after the rolling window moves 
     page.getByRole("heading", { name: "Frozen months" }),
   ).toBeVisible();
   await expect(page.getByText("Contributor not found")).toHaveCount(0);
+  await expect(
+    page.getByText(
+      "Current Solana payout wallet · 11111111111111111111111111111111",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(`Current Base payout wallet · ${baseAddress}`),
+  ).toBeVisible();
+  await expect(
+    page.getByText("No current payout wallet registered"),
+  ).toHaveCount(0);
 });
 
 test("makes the public project draft boundary unmistakable", async ({
