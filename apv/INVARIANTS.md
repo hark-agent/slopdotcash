@@ -89,7 +89,22 @@ First run: 2026-10-09, Hark sandbox, desktop Chromium. Each test also fails a fi
 
 Finding H1: no current test feeds a GitHub user whose `node_id` differs from the recorded one, so removing the `node_id` check stays green. A regression test for I3 is needed before the harness can claim I3.
 
-Not yet executed: the 36-cell matrix and I4. The renamed-actor rows are a code reading only.
+Not yet executed: the full 36-cell matrix and I4.
+
+### Run 2: I3 regression tests (commit on this branch)
+
+Two new tests in `tests/e2e/site.spec.ts`, both marked `test.fail()` as known violations at `b425030`:
+
+| Test | Observed at `b425030` | Verdict |
+|---|---|---|
+| node_id mismatch: GitHub returns the same login with a different `node_id` | profile shows "Current Solana payout wallet · 1111…" from the mismatched account | **I3 violated (H2)** |
+| GitHub login returns 404 | profile shows "No current payout wallet registered" | **I3 violated (H3)**, confirms the code reading on rows M25-M36 |
+
+Finding H2, root cause: `useCurrentWallet` builds its actor list only from leaderboard views and cycle contributors. A frozen-month-only actor is by definition in neither, so `actor` is undefined and `resolveGithubActorId(login, undefined, …)` skips the `node_id` comparison. The check exists in code but never runs for the actors it was written for. This also explains why `seed/no-node-id-check` stayed green: removing dead code changes nothing.
+
+Risk: if a frozen-only login is renamed and later taken by another GitHub account, the profile can show that other account's payout wallet.
+
+Both results come from behavioral assertions read in the Playwright error context, not from the sandbox console-noise check. Evidence level: evidenced in one environment, not independently verified. The renamed-actor rows are a code reading only.
 
 ## How to rerun
 

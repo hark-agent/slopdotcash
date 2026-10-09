@@ -2133,6 +2133,10 @@ test("I3: rejects a GitHub account whose node_id differs from the record", async
   page,
   request,
 }) => {
+  // Known violation at b425030 (apv/INVARIANTS.md, finding H2): for a
+  // frozen-only actor useCurrentWallet passes no node id, so the node_id
+  // check never runs. Remove test.fail when the check is wired.
+  test.fail();
   const actor = await findFrozenOnlyActor(request);
   test.skip(!actor, "every frozen-month contributor is still in window");
   if (!actor) return;
