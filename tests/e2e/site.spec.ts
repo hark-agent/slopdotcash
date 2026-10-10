@@ -1938,31 +1938,47 @@ test("I3: rejects a GitHub account whose node_id differs from the record", async
   expect(walletCalls).toEqual([]);
 });
 
-test("I3: does not report a confirmed absence when the GitHub login no longer resolves", async ({
-  page,
-  request,
-}) => {
-  const actor = await findFrozenOnlyActor(request);
-  test.skip(!actor, "every frozen-month contributor is still in window");
-  if (!actor) return;
-  await page.route(
-    `https://api.github.com/users/${encodeURIComponent(actor.login)}`,
-    (route) =>
-      route.fulfill({
-        status: 404,
-        contentType: "application/json",
-        body: JSON.stringify({ message: "Not Found" }),
-      }),
-  );
-  await routeWalletClaims(page, []);
-  await page.goto(`/contributors/${encodeURIComponent(actor.login)}`, {
-    waitUntil: "networkidle",
-  });
-  await expect(page.getByRole("heading", { name: actor.login })).toBeVisible();
-  await expect(
-    page.getByText("No current payout wallet registered"),
-  ).toHaveCount(0, { timeout: 5_000 });
-  await expect(
-    page.getByText("Current payout wallet status unavailable"),
-  ).toBeVisible({ timeout: 5_000 });
-});
+// The mocked GitHub 404 makes the browser log a resource error, so this test
+// uses the unguarded runner and checks every other console error itself.
+base(
+  "I3: does not report a confirmed absence when the GitHub login no longer resolves",
+  async ({ page, request }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (
+        message.type() === "error" &&
+        !message.location().url.startsWith("https://api.github.com/")
+      )
+        consoleErrors.push(message.text());
+    });
+    page.on("pageerror", (error) => consoleErrors.push(error.message));
+    const actor = await findFrozenOnlyActor(request);
+    base.skip(!actor, "every frozen-month contributor is still in window");
+    if (!actor) return;
+    await page.route(
+      `https://api.github.com/users/${encodeURIComponent(actor.login)}`,
+      (route) =>
+        route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ message: "Not Found" }),
+        }),
+    );
+    await routeWalletClaims(page, []);
+    await page.goto(`/contributors/${encodeURIComponent(actor.login)}`, {
+      waitUntil: "networkidle",
+    });
+    await expect(
+      page.getByRole("heading", { name: actor.login }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("No current payout wallet registered"),
+    ).toHaveCount(0, { timeout: 5_000 });
+    await expect(
+      page.getByText("Current payout wallet status unavailable"),
+    ).toBeVisible({ timeout: 5_000 });
+    expect(consoleErrors, "console errors other than the mocked 404").toEqual(
+      [],
+    );
+  },
+);
