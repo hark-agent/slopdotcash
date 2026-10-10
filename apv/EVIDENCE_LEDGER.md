@@ -14,6 +14,8 @@ Pre-registered invariants: `apv/INVARIANTS.md` on `apv/experiment-1` (I1 visibil
 - Parse: `python3 apv-runner/parse.py apv-runner/results_matrix/<NAME>.json`
 - Environment: Hark sandbox, Linux arm64, Playwright 1.62.1, Chrome for Testing 151.0.7922.34 (headless), desktop-chromium project.
 
+- Input snapshot (all runs R1-R7): `public/data/leaderboard.json`, 17417947 bytes, SHA-256 `f9827309c7a824ffd84bd5efd70cf2503eaf122bd8b96cb828acdab88416841c`. The bytes are published on branch `fixtures/leaderboard-snapshot` (commit a7ec5d3) with `SHA256SUMS`. This is a different snapshot from the one nerd27dk used for the PR #3 reruns (SHA-256 `9ee2ea15...`).
+
 ## Ledger
 
 "Δ vs baseline" compares each run with `b425030` (28/48). Red cells are listed as `cell: observed markers`.
