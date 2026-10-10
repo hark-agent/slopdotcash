@@ -1,0 +1,10 @@
+v2_base b425030 adapter=per-chain rc=1 2026-10-10T11:01:56Z
+v2_base b425030 adapter=per-chain rc=1 2026-10-10T11:11:52Z
+v2_pr3 4e4389b adapter=per-chain rc=0 2026-10-10T11:15:55Z
+v2_up_bee35b8 bee35b8 adapter=upstream-single rc=1 2026-10-10T11:22:24Z
+v2_fixv2 55274db adapter=upstream-single rc=0 2026-10-10T11:27:32Z
+v2_up_376fed1 376fed1 adapter=upstream-single rc=1 2026-10-10T11:34:56Z
+v2_stale_demo bee35b8 adapter=per-chain rc=0 2026-10-10T11:35:58Z
+e2e_v2_fixv2 rc=1
+e2e_v2_up_bee35b8 rc=1
+e2e_v2_fixv2 rc=1

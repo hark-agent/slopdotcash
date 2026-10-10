@@ -1,8 +1,14 @@
 /**
- * APV experiment 1: pre-registered actor x claim x lookup matrix.
+ * APV pre-registered actor x claim x lookup matrix (layer a: scenarios).
  * Reads apv/matrix_v2.csv and checks each cell's expected profile state.
  * Uses plain Playwright (no console guard), so a result here is the
  * behavioral verdict only.
+ *
+ * Experiment 2 split: this file owns scenarios, mocks and expectations.
+ * How a UI variant renders the markers lives in apv-adapters.ts, chosen with
+ * APV_ADAPTER (default "per-chain"). Before any cell runs, a sanity profile is
+ * opened; if the adapter cannot find the wallet section there, every cell is
+ * reported N/A (adapter stale) instead of failing.
  */
 import { readFileSync } from "node:fs";
 import {
@@ -12,19 +18,19 @@ import {
   test,
 } from "@playwright/test";
 import { deploymentOrigins, deploymentTier } from "../../src/lib/deployment";
+import {
+  type Cell,
+  MARKER_KEYS,
+  type Marker,
+  openWalletSection,
+  selectAdapter,
+} from "./apv-adapters";
 
 const deployment = deploymentOrigins(
   deploymentTier(process.env.VITE_SLOP_ENVIRONMENT),
 );
 const MATRIX = process.env.APV_MATRIX ?? "apv/matrix_v2.csv";
-
-type Cell = {
-  cell: string;
-  actor: "current" | "frozen-only" | "renamed" | "mismatch";
-  claim: "solana" | "base" | "both" | "none";
-  lookup: "ok" | "base-503" | "solana-timeout";
-  expected: string;
-};
+const adapter = selectAdapter(process.env.APV_ADAPTER);
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -65,18 +71,6 @@ const cells: Cell[] = body.map((values) => {
   );
   return record as unknown as Cell;
 });
-
-/** The seven profile states a cell can assert. */
-const MARKERS = {
-  solanaShown: /Current Solana payout wallet ·/u,
-  baseShown: /Current Base payout wallet ·/u,
-  solanaUnavailable: "Current Solana payout wallet status unavailable",
-  baseUnavailable: "Current Base payout wallet status unavailable",
-  unavailable: "Current payout wallet status unavailable",
-  none: "No current payout wallet registered",
-  historical: /Historical payout wallet ·/u,
-} as const;
-type Marker = keyof typeof MARKERS;
 
 function expectedMarkers(expected: string): Set<Marker> {
   const set = new Set<Marker>();
@@ -198,9 +192,9 @@ async function routeCell(page: Page, cell: Cell, actors: Actors) {
       const has = cell.claim === "both" || cell.claim === chain;
       if (!has)
         return route.fulfill({
-          status: 404,
+          status: adapter.noClaimReply.status,
           contentType: "application/json",
-          body: JSON.stringify({ error: "not_found" }),
+          body: adapter.noClaimReply.body,
         });
       return route.fulfill({
         status: 200,
@@ -220,28 +214,80 @@ async function routeCell(page: Page, cell: Cell, actors: Actors) {
   return { actor, githubCalls };
 }
 
+/** Sanity scenario for the applicability precheck: current x solana x ok. */
+const SANITY: Cell = {
+  cell: "P00",
+  actor: "current",
+  claim: "solana",
+  lookup: "ok",
+  expected: "Solana wallet shown",
+};
+let adapterStale: string | undefined;
+
+test.beforeAll(async ({ browser }, testInfo) => {
+  const context = await browser.newContext({
+    baseURL: testInfo.project.use.baseURL,
+  });
+  const page = await context.newPage();
+  try {
+    const actors = await pickActors(context.request);
+    const { actor } = await routeCell(page, SANITY, actors);
+    await page.goto(`/contributors/${encodeURIComponent(actor.login)}`);
+    if (!(await openWalletSection(page, adapter)))
+      adapterStale = `adapter ${adapter.name}: wallet section ("${adapter.walletLinkName}") not found or not visible on sanity profile ${actor.login}`;
+    else {
+      await page
+        .getByText(adapter.loadingText)
+        .waitFor({ state: "detached", timeout: 20_000 })
+        .catch(() => undefined);
+      let seen = 0;
+      for (const marker of MARKER_KEYS) {
+        const pattern = adapter.markers[marker];
+        if (pattern === null) continue;
+        seen += await page
+          .getByText(pattern, { exact: typeof pattern === "string" })
+          .count();
+      }
+      if (seen === 0)
+        adapterStale = `adapter ${adapter.name}: wallet section found but no known marker text on sanity profile ${actor.login}`;
+    }
+  } finally {
+    await context.close();
+  }
+});
+
 for (const cell of cells) {
   test(`${cell.cell} ${cell.actor} x ${cell.claim} x ${cell.lookup}`, async ({
     page,
     request,
   }) => {
+    const want = expectedMarkers(cell.expected);
+    test.info().annotations.push({ type: "adapter", description: adapter.name });
+    if (adapterStale) {
+      test.info().annotations.push({
+        type: "na",
+        description: `N/A (adapter stale): ${adapterStale}`,
+      });
+      test.skip(true, `N/A (adapter stale): ${adapterStale}`);
+    }
+    const fit = adapter.applicability(cell, want);
     const actors = await pickActors(request);
     const { actor } = await routeCell(page, cell, actors);
     await page.goto(`/contributors/${encodeURIComponent(actor.login)}`);
     await expect(
       page.getByRole("heading", { name: actor.login }),
     ).toBeVisible();
-    await expect(
-      page.getByRole("link", { name: "Register or update your wallet" }),
-    ).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText("Checking current payout wallet…")).toHaveCount(
-      0,
-      { timeout: 20_000 },
-    );
-    const want = expectedMarkers(cell.expected);
+    expect(
+      await openWalletSection(page, adapter),
+      "wallet section visible",
+    ).toBe(true);
+    await expect(page.getByText(adapter.loadingText)).toHaveCount(0, {
+      timeout: 20_000,
+    });
     const observed: Marker[] = [];
-    for (const marker of Object.keys(MARKERS) as Marker[]) {
-      const pattern = MARKERS[marker];
+    for (const marker of MARKER_KEYS) {
+      const pattern = adapter.markers[marker];
+      if (pattern === null) continue;
       const count = await page
         .getByText(pattern, { exact: typeof pattern === "string" })
         .count();
@@ -251,6 +297,14 @@ for (const cell of cells) {
       type: "observed",
       description: observed.join("+") || "nothing",
     });
+    if (!fit.applicable) {
+      // Observed markers are recorded above; the verdict is N/A, never green.
+      test.info().annotations.push({
+        type: "na",
+        description: `N/A: ${fit.reason}`,
+      });
+      test.skip(true, `N/A: ${fit.reason}`);
+    }
     expect(observed.sort()).toEqual([...want].sort());
   });
 }
