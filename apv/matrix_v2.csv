@@ -1,0 +1,49 @@
+cell,actor,claim,lookup,expected,note
+M01,current,solana,ok,Solana wallet shown,
+M02,current,solana,base-503,"Solana wallet shown; ""Base status unavailable""",
+M03,current,solana,solana-timeout,Current payout wallet status unavailable,
+M04,current,base,ok,Base wallet shown,
+M05,current,base,base-503,Current payout wallet status unavailable,
+M06,current,base,solana-timeout,"Base wallet shown; ""Solana status unavailable""",
+M07,current,both,ok,Solana wallet shown; Base wallet shown,
+M08,current,both,base-503,"Solana wallet shown; ""Base status unavailable""",
+M09,current,both,solana-timeout,"Base wallet shown; ""Solana status unavailable""",
+M10,current,none,ok,No current payout wallet registered,
+M11,current,none,base-503,Current payout wallet status unavailable,
+M12,current,none,solana-timeout,Current payout wallet status unavailable,
+M13,frozen-only,solana,ok,Solana wallet shown,
+M14,frozen-only,solana,base-503,"Solana wallet shown; ""Base status unavailable""",
+M15,frozen-only,solana,solana-timeout,Current payout wallet status unavailable,
+M16,frozen-only,base,ok,Base wallet shown,
+M17,frozen-only,base,base-503,Current payout wallet status unavailable,
+M18,frozen-only,base,solana-timeout,"Base wallet shown; ""Solana status unavailable""",
+M19,frozen-only,both,ok,Solana wallet shown; Base wallet shown,
+M20,frozen-only,both,base-503,"Solana wallet shown; ""Base status unavailable""",
+M21,frozen-only,both,solana-timeout,"Base wallet shown; ""Solana status unavailable""",
+M22,frozen-only,none,ok,No current payout wallet registered,
+M23,frozen-only,none,base-503,Current payout wallet status unavailable,
+M24,frozen-only,none,solana-timeout,Current payout wallet status unavailable,
+M25,renamed,solana,ok,Current payout wallet status unavailable,"OPEN: code reads GitHub 404 as ""no account"" and shows ""No current payout wallet registered"" (I3 candidate)"
+M26,renamed,solana,base-503,Current payout wallet status unavailable,"OPEN: code reads GitHub 404 as ""no account"" and shows ""No current payout wallet registered"" (I3 candidate)"
+M27,renamed,solana,solana-timeout,Current payout wallet status unavailable,"OPEN: code reads GitHub 404 as ""no account"" and shows ""No current payout wallet registered"" (I3 candidate)"
+M28,renamed,base,ok,Current payout wallet status unavailable,"OPEN: code reads GitHub 404 as ""no account"" and shows ""No current payout wallet registered"" (I3 candidate)"
+M29,renamed,base,base-503,Current payout wallet status unavailable,"OPEN: code reads GitHub 404 as ""no account"" and shows ""No current payout wallet registered"" (I3 candidate)"
+M30,renamed,base,solana-timeout,Current payout wallet status unavailable,"OPEN: code reads GitHub 404 as ""no account"" and shows ""No current payout wallet registered"" (I3 candidate)"
+M31,renamed,both,ok,Current payout wallet status unavailable,"OPEN: code reads GitHub 404 as ""no account"" and shows ""No current payout wallet registered"" (I3 candidate)"
+M32,renamed,both,base-503,Current payout wallet status unavailable,"OPEN: code reads GitHub 404 as ""no account"" and shows ""No current payout wallet registered"" (I3 candidate)"
+M33,renamed,both,solana-timeout,Current payout wallet status unavailable,"OPEN: code reads GitHub 404 as ""no account"" and shows ""No current payout wallet registered"" (I3 candidate)"
+M34,renamed,none,ok,Current payout wallet status unavailable,"OPEN: code reads GitHub 404 as ""no account"" and shows ""No current payout wallet registered"" (I3 candidate)"
+M35,renamed,none,base-503,Current payout wallet status unavailable,"OPEN: code reads GitHub 404 as ""no account"" and shows ""No current payout wallet registered"" (I3 candidate)"
+M36,renamed,none,solana-timeout,Current payout wallet status unavailable,"OPEN: code reads GitHub 404 as ""no account"" and shows ""No current payout wallet registered"" (I3 candidate)"
+M37,mismatch,solana,ok,Current payout wallet status unavailable,v2: GitHub login resolves to an account with a different node_id; no wallet of that account may show
+M38,mismatch,solana,base-503,Current payout wallet status unavailable,v2: GitHub login resolves to an account with a different node_id; no wallet of that account may show
+M39,mismatch,solana,solana-timeout,Current payout wallet status unavailable,v2: GitHub login resolves to an account with a different node_id; no wallet of that account may show
+M40,mismatch,base,ok,Current payout wallet status unavailable,v2: GitHub login resolves to an account with a different node_id; no wallet of that account may show
+M41,mismatch,base,base-503,Current payout wallet status unavailable,v2: GitHub login resolves to an account with a different node_id; no wallet of that account may show
+M42,mismatch,base,solana-timeout,Current payout wallet status unavailable,v2: GitHub login resolves to an account with a different node_id; no wallet of that account may show
+M43,mismatch,both,ok,Current payout wallet status unavailable,v2: GitHub login resolves to an account with a different node_id; no wallet of that account may show
+M44,mismatch,both,base-503,Current payout wallet status unavailable,v2: GitHub login resolves to an account with a different node_id; no wallet of that account may show
+M45,mismatch,both,solana-timeout,Current payout wallet status unavailable,v2: GitHub login resolves to an account with a different node_id; no wallet of that account may show
+M46,mismatch,none,ok,Current payout wallet status unavailable,v2: GitHub login resolves to an account with a different node_id; no wallet of that account may show
+M47,mismatch,none,base-503,Current payout wallet status unavailable,v2: GitHub login resolves to an account with a different node_id; no wallet of that account may show
+M48,mismatch,none,solana-timeout,Current payout wallet status unavailable,v2: GitHub login resolves to an account with a different node_id; no wallet of that account may show
