@@ -68,7 +68,37 @@ Score B: **2 findings (H2, H3) confirmed by 20 red cells on the audited head, al
 
 - One environment (Hark sandbox, headless Chromium, arm64), one run per revision. There are no repeats, so flakiness has not been measured, although none of R4–R6 shows a red cell that is not explained by its seed.
 - The GitHub API and registry responses are mocked by the spec (lookup conditions, 404, `node_id` mismatch). The results show the UI's behavior under those mocks, not against live services. The live-registry oracle (Oracle 2) was not rerun.
-- I4 (direct routes / 404) is not covered by this matrix.
+- I4 (direct routes / 404) is not covered by this matrix. A separate direct-route check is in the second-seat recheck below.
 - The upstream run (R3) is a harness-applicability failure, not evidence about upstream behavior. To measure it, the spec would need to open `details.profile-wallet-details` before checking visibility, plus a marker mapping for upstream's single-chain text. Not done; spec left unchanged.
 - The F3 verdict depends on the baseline. Rerun as `4e4389b` + F3 in R7 (local detached commit `28f609a`; no branches created or moved).
-- Evidence level: evidenced in one environment, not independently verified.
+- Evidence level: evidenced in two environments (Hark sandbox Linux arm64; second seat macOS Apple Silicon). The second seat is operator-linked, so this is not an independent confirmation.
+
+## Second-seat recheck (nerd27dk, 2026-10-10)
+
+nerd27dk replayed the published matrix in a fresh clone and published the evidence on a separate archive branch (do not merge):
+
+- Branch: https://github.com/nerd27dk/slopdotcash/tree/fixtures/leaderboard-snapshot, commit `95986f84247d09a00a5231c10813d0cfba70fab1`
+- Report: `independent-recheck-20261010/INDEPENDENT-RECHECK-20261010.md`; raw Playwright JSON and build logs in `independent-recheck-20261010/raw-results/`
+- Matrix source: `apv/experiment-1` at `3b1a2a2`
+- Environment: macOS 27.0, Apple Silicon, Playwright 1.62.1, Chromium 151.0.7922.34
+- Input snapshot: `public/data/leaderboard.json`, 18039804 bytes, SHA-256 `9ee2ea15cda516fbb793827c2b5c9fa0afd005ca6e303bae8e18c95261260850`. This is a different snapshot from the one used for R1–R7 (`f9827309...`, see above).
+
+Hark check of the published files (2026-10-10 13:10 EEST): cloned the branch at `95986f8` and ran `sha256sum -c SHA256SUMS`: 21/21 OK. Extracted the failed cells from each raw JSON file and compared them with this ledger:
+
+| Run | Second seat | Failed cells | Same as ledger |
+|---|---:|---|---|
+| baseline `b425030` | 28/48 | M25–M38, M40, M42–M46 | Yes (R1) |
+| PR #3 `4e4389b` | 48/48 | none | Yes (R2) |
+| `seed/promise-all` | 24/48 | M02, M06, M08, M09, M14, M18, M20, M21, M25–M37, M40, M43, M46 | Yes (R4) |
+| `seed/no-frozen-lookup` | 13/48 | M13–M21, M23–M48 | Yes (R5) |
+| `seed/no-node-id-check` | 28/48 | same as baseline | Yes (R6) |
+| `28f609a` (F3 on fix) | 40/48 | M37, M38, M40, M42–M46 | Yes (R7) |
+
+Result: on a different input snapshot, OS and machine, every run has the same failed cells. This is a replay of the published harness (type A). It is not blind discovery.
+
+Additional second-seat observations:
+
+- R3 (`376fed1`, 0/48): confirmed as a harness-applicability failure. Upstream puts the wallet link inside a collapsed `<details class="profile-wallet-details">`, and the spec requires it to be visible.
+- I4 direct routes, local Pages preview built from `28f609a` (its `public/_redirects`, `public/_routes.json` and `src/App.tsx` are identical to `4e4389b`): `/earnings`, `/earnings/` and `/earnings?x=1` return 404 without the app root. The other 18 tested paths return 200 with the app root on load and reload. An unknown path returns 404. Cause: the fork's route configuration is older than upstream PR #603. This is not caused by the PR #3 code change.
+- I4 on the live site: `/earnings`, `/earnings/` and `/earnings?x=1` return 200 with the app root; `/does-not-exist` returns 404.
+- Open item: bring the fork's route configuration up to date with PR #603, then rerun I4 on the preview.
