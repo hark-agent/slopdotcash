@@ -1,7 +1,23 @@
 # Live verification pack: profile payout-wallet fix
 
-Branch `apv/live-check` of the fork `hark-agent/slopdotcash`. This pack is for
-one human operator on a Mac. It uses real public data only. It has no mocks.
+Branch `apv/live-check` of the fork `hark-agent/slopdotcash`. This pack is a
+task for one agent (for example a coding agent) that runs it on a macOS
+machine. It uses real public data only. It has no mocks.
+
+## 0. Rules for the agent that runs this pack
+
+- Run the pack as it is. Do not edit the scripts, the expectations or the
+  revisions. If a step needs a change to run on your machine, make the
+  smallest change, and write it in the report.
+- Read-only on GitHub: do not push, open a pull request or an issue, or
+  write a comment anywhere. Do not publish any result.
+- The results name real contributors and their wallet addresses. Keep them
+  on the machine and in the report only.
+- Do not put `GITHUB_TOKEN` or any other secret in the report. The pack
+  writes only whether a token was set.
+- Do not retry a failing step more than twice. Stop and report the failure
+  with its log.
+- When the run is done (or stops), report as section 8 says.
 
 ## 1. Goal
 
@@ -54,8 +70,9 @@ What the sandbox dry run of this pack showed (live data, 2026-10-10, see
 have a current wallet claim on the live API and 1 has a login that GitHub
 does not resolve. On https://slop.cash and on `bee35b8` all selected rows of
 this kind show "No current payout wallet registered". On `258c991` all 21
-selected rows match the oracle. This is one run in one environment. The
-operator run on a Mac is the independent check.
+selected rows match the oracle. This is one run in one environment. A run on a
+Mac is a second run in a different environment. It is not an independent
+review of the fix.
 
 Not proven by this pack, and risks of the fix:
 
@@ -335,8 +352,9 @@ line of the console is its SHA-256.
 
 To report:
 
-1. Send the `.tar.gz` and its SHA-256 line to the person who sent you this
-   pack, through a private channel. Do not post it in an issue, a pull request or a public chat.
+1. Give the `.tar.gz` and its SHA-256 line to whoever gave you this task,
+   through a private channel. Do not post it in an issue, a pull request or
+   a public chat.
 2. In the message, give: the timestamp, `results.md` summary table,
    `ci_summary.md`, and any step that you ran by hand or changed.
 3. To check the archive: `shasum -a 256 -c SHA256SUMS` in the unpacked
@@ -360,7 +378,7 @@ Do not retry a failing step more than twice. Report the failure with its log.
 `reference/sandbox-2026-10-10/NOTES.md` holds the sandbox run of phases 2 and
 3: its deviations from `run_all.sh` and aggregate counts only. Per-actor rows
 (logins, wallet addresses, raw bodies, screenshots) are not published, because
-they identify affected people. It is not a substitute for the operator run.
+they identify affected people. It is not a substitute for a run on a Mac.
 
 ## 11. Environment switches
 
