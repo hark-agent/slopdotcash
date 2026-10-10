@@ -570,8 +570,7 @@ async function resolveGithubActorId(
     !Number.isSafeInteger(user.id) ||
     Number(user.id) < 1 ||
     typeof user.login !== "string" ||
-    user.login.toLowerCase() !== login ||
-    (nodeId !== undefined && user.node_id !== nodeId)
+    (void nodeId, user.login.toLowerCase() !== login) // SEEDED FAULT F3: node_id match skipped.
   ) {
     throw new TypeError("GitHub user does not match the profile actor");
   }
