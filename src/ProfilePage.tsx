@@ -18,7 +18,10 @@ import {
 } from "./lib/leaderboard";
 import { findProject, type ProjectDefinition } from "./lib/projects.mjs";
 import { formatThirds } from "./lib/reviewer-leaders";
-import { useFundingReviews } from "./lib/use-funding-reviews";
+import {
+  type FundingReviewsState,
+  useFundingReviews,
+} from "./lib/use-funding-reviews";
 import type { DataState } from "./lib/use-snapshot";
 import { ProfilePoints } from "./Points";
 import {
@@ -47,7 +50,7 @@ export function ProfilePage({
 }) {
   const [funding, retryFunding] = useFundingIndex();
   const [fundingReviews] = useFundingReviews(true);
-  const currentWallet = useCurrentWallet(state, login);
+  const currentWallet = useCurrentWallet(state, login, fundingReviews);
   if (state.status !== "ready")
     return (
       <main className="shell route-main">
@@ -419,7 +422,11 @@ export function ProfilePage({
   );
 }
 
-function useCurrentWallet(state: DataState, login: string): CurrentWalletState {
+function useCurrentWallet(
+  state: DataState,
+  login: string,
+  fundingReviews: FundingReviewsState,
+): CurrentWalletState {
   const [wallet, setWallet] = useState<CurrentWalletState>({
     status: "loading",
   });
@@ -436,17 +443,34 @@ function useCurrentWallet(state: DataState, login: string): CurrentWalletState {
         cycle.contributors.map((contributor) => contributor.actor),
       ),
     ];
-    const actor = actors.find(
+    const windowActor = actors.find(
       (candidate) => candidate.login.toLowerCase() === normalizedLogin,
     );
+    // A frozen-month-only actor is in neither list. Its review record keeps
+    // the GitHub node id, which the account lookup must match.
+    if (!windowActor && fundingReviews.status === "loading") return;
+    if (!windowActor && fundingReviews.status !== "ready") {
+      setWallet({ status: "error", login: normalizedLogin });
+      return;
+    }
+    const actor: { id: string; login: string; avatarUrl?: string } | undefined =
+      windowActor ??
+      (fundingReviews.status === "ready"
+        ? fundingReviews.index.reviews
+            .flatMap((review) => review.contributors)
+            .map((contributor) => contributor.actor)
+            .find(
+              (candidate) => candidate.login.toLowerCase() === normalizedLogin,
+            )
+        : undefined);
     const avatarActorId = actor?.avatarUrl
       ? /^https:\/\/avatars\.githubusercontent\.com\/u\/(\d+)(?:\?|$)/u.exec(
           actor.avatarUrl,
         )?.[1]
       : undefined;
-    const githubActorId =
+    const localActorId =
       actor && /^\d+$/u.test(actor.id) ? actor.id : avatarActorId;
-    if (!githubActorId) {
+    if (!actor) {
       setWallet({ status: "none", login: normalizedLogin });
       return;
     }
@@ -456,14 +480,24 @@ function useCurrentWallet(state: DataState, login: string): CurrentWalletState {
       () => controller.abort(new Error("wallet claim request timed out")),
       WALLET_CLAIM_TIMEOUT_MS,
     );
-    void fetch(
-      `${browserDeployment.api}/api/v1/wallet-claims/actors/${githubActorId}/current`,
-      {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-        signal: controller.signal,
-      },
-    )
+    // Frozen-month records keep only a GitHub node id. Resolve the numeric id
+    // and require the account's node_id to match the recorded one.
+    let githubActorId = localActorId ?? "";
+    const actorId = localActorId
+      ? Promise.resolve(localActorId)
+      : resolveGithubActorId(normalizedLogin, actor.id, controller.signal);
+    void actorId
+      .then((resolved) => {
+        githubActorId = resolved;
+        return fetch(
+          `${browserDeployment.api}/api/v1/wallet-claims/actors/${resolved}/current`,
+          {
+            cache: "no-store",
+            headers: { Accept: "application/json" },
+            signal: controller.signal,
+          },
+        );
+      })
       .then(async (response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return readBoundedJson(
@@ -511,7 +545,7 @@ function useCurrentWallet(state: DataState, login: string): CurrentWalletState {
       controller.abort();
       window.clearTimeout(timeout);
     };
-  }, [state, login]);
+  }, [state, login, fundingReviews]);
   if (wallet.status !== "loading" && wallet.login !== login.toLowerCase()) {
     return { status: "loading" };
   }
@@ -527,6 +561,46 @@ type CurrentWalletState =
 const WALLET_CLAIM_TIMEOUT_MS = 12_000;
 
 const MAX_WALLET_CLAIM_BYTES = 16 * 1024;
+
+const MAX_GITHUB_USER_BYTES = 64 * 1024;
+
+async function resolveGithubActorId(
+  login: string,
+  nodeId: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const response = await fetch(
+    `https://api.github.com/users/${encodeURIComponent(login)}`,
+    {
+      cache: "no-store",
+      credentials: "omit",
+      headers: { Accept: "application/vnd.github+json" },
+      signal,
+    },
+  );
+  // A 404 means the login no longer names an account (renamed or deleted).
+  // That does not confirm the actor has no wallet, so it is a failed lookup.
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const value = await readBoundedJson(
+    response,
+    MAX_GITHUB_USER_BYTES,
+    "GitHub user",
+  );
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("GitHub user must be an object");
+  }
+  const user = value as Record<string, unknown>;
+  if (
+    !Number.isSafeInteger(user.id) ||
+    Number(user.id) < 1 ||
+    typeof user.login !== "string" ||
+    user.login.toLowerCase() !== login ||
+    user.node_id !== nodeId
+  ) {
+    throw new TypeError("GitHub user does not match the profile actor");
+  }
+  return String(user.id);
+}
 
 function OpportunityList({
   opportunities,
